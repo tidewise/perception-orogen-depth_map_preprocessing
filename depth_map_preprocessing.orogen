@@ -1,0 +1,31 @@
+name "depth_map_preprocessing"
+version "0.1"
+
+import_types_from "base"
+import_types_from "depth_map_preprocessingTypes.hpp"
+
+task_context "ConverterBase" do
+    abstract
+    needs_configuration
+
+    # Selects the type of odometry based motion compensation
+    property('motion_compensation', '/depth_map_preprocessing/MotionCompensation', :NoCompensation)
+
+    input_port 'depth_map', '/base/samples/DepthMap'
+
+    transformer do
+        transform 'laser', 'odometry'
+        align_port('depth_map', 0.1)
+        max_latency 0.2
+    end
+
+    port_driven
+end
+
+task_context "PointcloudConverter" do
+	subclasses "ConverterBase"
+    needs_configuration
+
+    output_port 'pointcloud', '/base/samples/Pointcloud'
+
+end
