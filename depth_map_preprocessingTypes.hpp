@@ -15,7 +15,9 @@ enum MotionCompensation
 {
     NoCompensation = 0,
     HorizontalInterpolation,
-    VerticalInterpolation
+    Horizontal,
+    VerticalInterpolation,
+    Vertical
 };
 
 }

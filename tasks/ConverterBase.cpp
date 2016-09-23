@@ -18,12 +18,24 @@ ConverterBase::~ConverterBase()
 {
 }
 
-void ConverterBase::depth_mapStartTimeTransformerCallback(const base::Time& ts, const base::Time& depth_map_sample_start)
+void ConverterBase::depth_mapAcquisitionTimeTransformerCallback(const base::Time& ts, const base::Time& depth_map_sample_start)
 {
-    if(getTransformations(ts, depth_map_start_transforms))
-        depth_map_start_transforms.sample_time_id = depth_map_sample_start;
+    // get current transforms set
+    std::list<SampleTransforms>::reverse_iterator current_acquisition = depth_map_acquisition_transforms.rbegin();
+    if(current_acquisition->sample_time_id != depth_map_sample_start)
+    {
+        // create next set
+        depth_map_acquisition_transforms.push_back(SampleTransforms(depth_map_sample_start));
+        current_acquisition = depth_map_acquisition_transforms.rbegin();
+        current_acquisition->laser_in_odometry.reserve(acquisition_timestamps);
+    }
+
+    // receive transformation
+    Eigen::Affine3d laserInOdometry;
+    if(_laser2odometry.get(ts, laserInOdometry, true))
+        current_acquisition->laser_in_odometry.push_back(laserInOdometry);
     else
-        depth_map_start_transforms.sample_time_id.microseconds = 0;
+        LOG_DEBUG_S << "Failed to receive a depth map acquisition transformation. Interpolation will be skipped!";
 }
 
 void ConverterBase::depth_mapTransformerCallback(const base::Time &ts, const ::base::samples::DepthMap &depth_map_sample)
@@ -33,53 +45,66 @@ void ConverterBase::depth_mapTransformerCallback(const base::Time &ts, const ::b
 
 void ConverterBase::pullPorts()
 {
-    bool keepGoing = true;
-    bool hasData =  true ;
-
-    while(keepGoing)
+    while( _depth_map.read(port_listener_depth_map_sample, false) == RTT::NewData )
     {
-        keepGoing = false;
+        // lazy registration of acquisition time stream
+        if(depth_map_acquisition_times_idx_tr < 0 && motion_compensation != depth_map_preprocessing::NoCompensation)
+            registerAcquisitionTimeStream();
 
-        if(hasData && _depth_map.read(port_listener_depth_map_sample, false) == RTT::NewData )
+        if((motion_compensation == depth_map_preprocessing::HorizontalInterpolation ||
+            motion_compensation == depth_map_preprocessing::VerticalInterpolation) &&
+            port_listener_depth_map_sample.timestamps.size() >= 2)
         {
-            if(_motion_compensation.value() && port_listener_depth_map_sample.timestamps.size() >= 2)
+            if(port_listener_depth_map_sample.timestamps.front() <= port_listener_depth_map_sample.timestamps.back())
             {
-                if(port_listener_depth_map_sample.timestamps.front() <= port_listener_depth_map_sample.timestamps.back())
-                {
-                    _transformer.pushData(depth_map_start_time_idx_tr, port_listener_depth_map_sample.timestamps.front(), port_listener_depth_map_sample.time);
-                    _transformer.pushData(depth_map_idx_tr, port_listener_depth_map_sample.timestamps.back(), port_listener_depth_map_sample);
-                }
-                else
-                {
-                    _transformer.pushData(depth_map_start_time_idx_tr, port_listener_depth_map_sample.timestamps.back(), port_listener_depth_map_sample.time);
-                    _transformer.pushData(depth_map_idx_tr, port_listener_depth_map_sample.timestamps.front(), port_listener_depth_map_sample);
-                }
+                _transformer.pushData(depth_map_acquisition_times_idx_tr, port_listener_depth_map_sample.timestamps.front(), port_listener_depth_map_sample.time);
+                _transformer.pushData(depth_map_idx_tr, port_listener_depth_map_sample.timestamps.back(), port_listener_depth_map_sample);
             }
             else
-                _transformer.pushData(depth_map_idx_tr, port_listener_depth_map_sample.time, port_listener_depth_map_sample);
-            keepGoing = true;
+            {
+                _transformer.pushData(depth_map_acquisition_times_idx_tr, port_listener_depth_map_sample.timestamps.back(), port_listener_depth_map_sample.time);
+                _transformer.pushData(depth_map_idx_tr, port_listener_depth_map_sample.timestamps.front(), port_listener_depth_map_sample);
+            }
+        }
+        else if((motion_compensation == depth_map_preprocessing::Horizontal && port_listener_depth_map_sample.timestamps.size() == port_listener_depth_map_sample.horizontal_size) ||
+                (motion_compensation == depth_map_preprocessing::Vertical && port_listener_depth_map_sample.timestamps.size() == port_listener_depth_map_sample.vertical_size))
+        {
+            acquisition_timestamps = port_listener_depth_map_sample.timestamps.size();
+            if(port_listener_depth_map_sample.timestamps.front() <= port_listener_depth_map_sample.timestamps.back())
+                pushDepthMapTimestamps(port_listener_depth_map_sample.timestamps.begin(), port_listener_depth_map_sample.timestamps.end()-1, port_listener_depth_map_sample);
+            else
+                pushDepthMapTimestamps(port_listener_depth_map_sample.timestamps.rbegin(), port_listener_depth_map_sample.timestamps.rend()-1, port_listener_depth_map_sample);
         }
         else
-            hasData = false;
+            _transformer.pushData(depth_map_idx_tr, port_listener_depth_map_sample.time, port_listener_depth_map_sample);
     }
 }
 
-bool ConverterBase::getTransformations(const base::Time& ts, SampleTransforms& transformation) const
+void ConverterBase::registerAcquisitionTimeStream()
 {
-    // get transformations
-    if (!_laser2odometry.get(ts, transformation.laser_in_odometry, true))
-    {
-        LOG_ERROR_S << "skip interpolation, have no laserInOdometry transformation sample!";
-        return false;
-    }
-    return true;
+    // compute stream period
+    double stream_period = _depth_map_period.value();
+    if(motion_compensation == depth_map_preprocessing::Horizontal)
+        stream_period /= (double)port_listener_depth_map_sample.horizontal_size;
+    else if(motion_compensation == depth_map_preprocessing::Vertical)
+        stream_period /= (double)port_listener_depth_map_sample.vertical_size;
+    else
+        stream_period *= 0.5;
+
+    // register stream
+    depth_map_acquisition_times_idx_tr = _transformer.registerDataStream< base::Time >(
+            base::Time::fromSeconds(stream_period),
+            boost::bind( &ConverterBase::depth_mapAcquisitionTimeTransformerCallback, this, _1, _2), -1, "depth_map_acquisition_times");
 }
 
-Eigen::Affine3d ConverterBase::computeLocalTransfromation(const ConverterBase::SampleTransforms& start, const ConverterBase::SampleTransforms& end) const
+void ConverterBase::computeLocalTransfromations(const ConverterBase::SampleTransforms& transformations, const Eigen::Affine3d& latest, std::vector< Eigen::Affine3d >& laserLinesToLatestLine) const
 {
-    // computes the pose of the laser at t_end expressed in t_start;
-    return start.laser_in_odometry.inverse() * end.laser_in_odometry;
+   // computes the poses of t_latest expressed in t_i;
+   laserLinesToLatestLine.resize(transformations.laser_in_odometry.size());
+   for(unsigned i = 0; i < transformations.laser_in_odometry.size(); i++)
+       laserLinesToLatestLine[i] = transformations.laser_in_odometry[i].inverse() * latest;
 }
+
 
 /// The following lines are template definitions for the various state machine
 // hooks defined by Orocos::RTT. See ConverterBase.hpp for more detailed
@@ -90,12 +115,10 @@ bool ConverterBase::configureHook()
     if (! ConverterBaseBase::configureHook())
         return false;
 
-    depth_map_start_time_idx_tr = _transformer.registerDataStream< base::Time >(
-            base::Time::fromSeconds(_depth_map_period.value()),
-            boost::bind( &ConverterBase::depth_mapStartTimeTransformerCallback, this, _1, _2), -1, "depth_map_start_time");
-
-    depth_map_start_transforms.sample_time_id.microseconds = 0;
-
+    depth_map_acquisition_times_idx_tr = -1;
+    depth_map_acquisition_transforms.clear();
+    depth_map_acquisition_transforms.push_back(SampleTransforms(base::Time::fromMicroseconds(0)));
+    acquisition_timestamps = 1;
     motion_compensation = _motion_compensation.value();
 
     return true;
@@ -104,8 +127,6 @@ bool ConverterBase::startHook()
 {
     if (! ConverterBaseBase::startHook())
         return false;
-
-    if( !_depth_map.connected() ) _transformer.disableStream(depth_map_start_time_idx_tr);
 
     return true;
 }
@@ -125,5 +146,6 @@ void ConverterBase::cleanupHook()
 {
     ConverterBaseBase::cleanupHook();
 
-    _transformer.unregisterDataStream(depth_map_start_time_idx_tr);
+    if(depth_map_acquisition_times_idx_tr > 0)
+        _transformer.unregisterDataStream(depth_map_acquisition_times_idx_tr);
 }
