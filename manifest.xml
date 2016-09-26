@@ -9,4 +9,5 @@
   <depend package="base/cmake" />
   <depend package="drivers/orogen/transformer" />
   <depend package="base/orogen/types" />
+  <depend package="perception/depth_map_preprocessing" />
 </package>

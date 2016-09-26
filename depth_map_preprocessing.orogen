@@ -4,6 +4,28 @@ version "0.1"
 import_types_from "base"
 import_types_from "depth_map_preprocessingTypes.hpp"
 
+using_library "depth_map_preprocessing"
+
+# This filter has the goal to remove separated measurments in the scan
+# and support measurments with neighboring measurments.
+task_context "OutlierFilter" do
+    needs_configuration
+
+    # A neighbor of a measurment is valid if the angle between the plain desciped by
+    # this measurment and the vector between the measurment and the neighbor is less
+    # or equal to this property. The angle is in range [0,0.5PI].
+    property('maximum_angle_to_neighbor', 'double', 1.05).dynamic
+
+    # Minimum amount of valid neigbors each measurment must have.
+    property('valid_neighbors', 'int', 2).dynamic
+
+    input_port 'depth_map', '/base/samples/DepthMap'
+
+    output_port 'filtered_depth_map', '/base/samples/DepthMap'
+
+    port_driven
+end
+
 task_context "ConverterBase" do
     abstract
     needs_configuration
