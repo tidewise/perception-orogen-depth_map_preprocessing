@@ -13,7 +13,7 @@ namespace depth_map_preprocessing
 
 /**
  * :NoCompensation
- *    No motion compensation will be applyed.
+ *    No motion compensation will be applieed.
  * :HorizontalInterpolation and :VerticalInterpolation
  *    Will interpolate the local movement by the first and the last timestamp
  *    and will apply the transformations either horizontal (column-wise) or
