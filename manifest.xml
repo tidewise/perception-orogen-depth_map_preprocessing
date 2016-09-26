@@ -10,4 +10,6 @@
   <depend package="drivers/orogen/transformer" />
   <depend package="base/orogen/types" />
   <depend package="perception/depth_map_preprocessing" />
+
+  <tags>stable</tags>
 </package>
