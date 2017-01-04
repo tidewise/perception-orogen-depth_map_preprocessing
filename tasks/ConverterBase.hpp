@@ -6,6 +6,8 @@
 #include "depth_map_preprocessing/ConverterBaseBase.hpp"
 #include "depth_map_preprocessingTypes.hpp"
 
+#include <Eigen/StdVector>
+
 namespace depth_map_preprocessing{
 
     /*! \class ConverterBase
@@ -26,11 +28,12 @@ namespace depth_map_preprocessing{
     {
 	friend class ConverterBaseBase;
     protected:
+        typedef std::vector<Eigen::Affine3d, Eigen::aligned_allocator<Eigen::Affine3d>> TransformationVector;
 
         struct SampleTransforms
         {
             base::Time sample_time_id;
-            std::vector<Eigen::Affine3d> laser_in_odometry;
+            TransformationVector laser_in_odometry;
 
             SampleTransforms(const base::Time& sample_time_id) : sample_time_id(sample_time_id) {}
 
@@ -79,7 +82,7 @@ namespace depth_map_preprocessing{
         /**
          * Helper method to compute the relative transformations inside of one scan
          */
-        void computeLocalTransfromations(const SampleTransforms& transformations, const Eigen::Affine3d& latest, std::vector<Eigen::Affine3d>& laserLinesToLatestLine) const;
+        void computeLocalTransfromations(const SampleTransforms& transformations, const Eigen::Affine3d& latest, TransformationVector& laserLinesToLatestLine) const;
 
         /**
          * Helper method to push acquisition timestamps to the transformer
@@ -193,7 +196,7 @@ bool ConverterBase::convertToPointCloud(const base::Time& ts, const base::sample
         Eigen::Affine3d depth_map_end_transform;
         if(_laser2odometry.get(ts, depth_map_end_transform, true))
         {
-            std::vector<Eigen::Affine3d> laserLinesToLatestLine;
+            TransformationVector laserLinesToLatestLine;
             computeLocalTransfromations(*acquisition_transforms, depth_map_end_transform, laserLinesToLatestLine);
 
             if((motion_compensation == HorizontalInterpolation || motion_compensation == VerticalInterpolation) && laserLinesToLatestLine.size() == 1)
@@ -215,7 +218,7 @@ bool ConverterBase::convertToPointCloud(const base::Time& ts, const base::sample
                                                                  true, true, motion_compensation == Horizontal ? false : true);
                 else
                 {
-                    std::vector<Eigen::Affine3d> laserLinesToLatestLine_reverse(laserLinesToLatestLine.size());
+                    TransformationVector laserLinesToLatestLine_reverse(laserLinesToLatestLine.size());
                     for(unsigned i = 1; i <= laserLinesToLatestLine.size(); i++)
                         laserLinesToLatestLine_reverse[laserLinesToLatestLine.size()-i] = laserLinesToLatestLine[i-1].inverse();
                     depth_map_sample.convertDepthMapToPointCloud(pointcloud, laserLinesToLatestLine_reverse,

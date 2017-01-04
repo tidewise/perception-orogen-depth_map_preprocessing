@@ -97,7 +97,7 @@ void ConverterBase::registerAcquisitionTimeStream()
             boost::bind( &ConverterBase::depth_mapAcquisitionTimeTransformerCallback, this, _1, _2), -1, "depth_map_acquisition_times");
 }
 
-void ConverterBase::computeLocalTransfromations(const ConverterBase::SampleTransforms& transformations, const Eigen::Affine3d& latest, std::vector< Eigen::Affine3d >& laserLinesToLatestLine) const
+void ConverterBase::computeLocalTransfromations(const ConverterBase::SampleTransforms& transformations, const Eigen::Affine3d& latest, TransformationVector& laserLinesToLatestLine) const
 {
    // computes the poses of t_latest expressed in t_i;
    laserLinesToLatestLine.resize(transformations.laser_in_odometry.size());
