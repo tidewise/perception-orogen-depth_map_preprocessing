@@ -1,0 +1,6 @@
+--- name:default
+# Valid neigbors have an angle not greater than this value.
+# The angle is always defined from the origin to the more distant point.
+maximum_angle_to_neighbor: 2.53
+# Minimum amount of valid neigbors
+valid_neighbors: 2
