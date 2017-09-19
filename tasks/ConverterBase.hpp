@@ -4,7 +4,7 @@
 #define DEPTH_MAP_PREPROCESSING_CONVERTERBASE_TASK_HPP
 
 #include "depth_map_preprocessing/ConverterBaseBase.hpp"
-#include "depth_map_preprocessingTypes.hpp"
+#include <depth_map_preprocessing/PointCloudConversion.hpp>
 
 #include <Eigen/StdVector>
 
@@ -28,12 +28,11 @@ namespace depth_map_preprocessing{
     {
 	friend class ConverterBaseBase;
     protected:
-        typedef std::vector<Eigen::Affine3d, Eigen::aligned_allocator<Eigen::Affine3d>> TransformationVector;
 
         struct SampleTransforms
         {
             base::Time sample_time_id;
-            TransformationVector laser_in_odometry;
+            PointCloudConversion::TransformationVector laser_in_odometry;
 
             SampleTransforms(const base::Time& sample_time_id) : sample_time_id(sample_time_id) {}
 
@@ -43,7 +42,6 @@ namespace depth_map_preprocessing{
                 laser_in_odometry.clear();
             }
         };
-
 
         /**
          * Will be called if a new sample is availale and must be implemented in subclasses.
@@ -71,18 +69,14 @@ namespace depth_map_preprocessing{
          * Converts the given sample to a pointcloud while applying the selected motion compensation option.
          */
         template<class T>
-        bool convertToPointCloud(const base::Time &ts, const base::samples::DepthMap &depth_map_sample, std::vector<T>& pointcloud);
+        bool convertToPointCloud(const base::Time &ts, const base::samples::DepthMap &depth_map_sample,
+                                std::vector<T>& pointcloud);
 
         /**
          * Helper method to register the depth map acquisition transformations stream in a lazy fasion.
          * This is important since the period information might be computed based on the amount of timestamps.
          */
         void registerAcquisitionTimeStream();
-
-        /**
-         * Helper method to compute the relative transformations inside of one scan
-         */
-        void computeLocalTransfromations(const SampleTransforms& transformations, const Eigen::Affine3d& latest, TransformationVector& laserLinesToLatestLine) const;
 
         /**
          * Helper method to push acquisition timestamps to the transformer
@@ -176,7 +170,8 @@ namespace depth_map_preprocessing{
 
 
 template<class T>
-bool ConverterBase::convertToPointCloud(const base::Time& ts, const base::samples::DepthMap& depth_map_sample, std::vector< T >& pointcloud)
+bool ConverterBase::convertToPointCloud(const base::Time &ts, const base::samples::DepthMap &depth_map_sample,
+                        std::vector<T>& pointcloud)
 {
     if(motion_compensation == NoCompensation)
     {
@@ -196,36 +191,9 @@ bool ConverterBase::convertToPointCloud(const base::Time& ts, const base::sample
         Eigen::Affine3d depth_map_end_transform;
         if(_laser2odometry.get(ts, depth_map_end_transform, true))
         {
-            TransformationVector laserLinesToLatestLine;
-            computeLocalTransfromations(*acquisition_transforms, depth_map_end_transform, laserLinesToLatestLine);
-
-            if((motion_compensation == HorizontalInterpolation || motion_compensation == VerticalInterpolation) && laserLinesToLatestLine.size() == 1)
-            {
-                if(depth_map_sample.timestamps.front() <= depth_map_sample.timestamps.back())
-                    depth_map_sample.convertDepthMapToPointCloud(pointcloud, laserLinesToLatestLine.front(), Eigen::Affine3d::Identity(),
-                                                                 true, true, motion_compensation == HorizontalInterpolation ? false : true);
-                else
-                    depth_map_sample.convertDepthMapToPointCloud(pointcloud, Eigen::Affine3d::Identity(), laserLinesToLatestLine.front().inverse(),
-                                                                 true, true, motion_compensation == HorizontalInterpolation ? false : true);
-                return true;
-            }
-            else if((motion_compensation == Horizontal && laserLinesToLatestLine.size() == depth_map_sample.horizontal_size-1) ||
-                    (motion_compensation == Vertical && laserLinesToLatestLine.size() == depth_map_sample.vertical_size-1))
-            {
-                laserLinesToLatestLine.push_back(Eigen::Affine3d::Identity());
-                if(depth_map_sample.timestamps.front() <= depth_map_sample.timestamps.back())
-                    depth_map_sample.convertDepthMapToPointCloud(pointcloud, laserLinesToLatestLine,
-                                                                 true, true, motion_compensation == Horizontal ? false : true);
-                else
-                {
-                    TransformationVector laserLinesToLatestLine_reverse(laserLinesToLatestLine.size());
-                    for(unsigned i = 1; i <= laserLinesToLatestLine.size(); i++)
-                        laserLinesToLatestLine_reverse[laserLinesToLatestLine.size()-i] = laserLinesToLatestLine[i-1].inverse();
-                    depth_map_sample.convertDepthMapToPointCloud(pointcloud, laserLinesToLatestLine_reverse,
-                                                                 true, true, motion_compensation == Horizontal ? false : true);
-                }
-                return true;
-            }
+            acquisition_transforms->laser_in_odometry.push_back(depth_map_end_transform);
+            return PointCloudConversion::convertToPointCloud(depth_map_sample, acquisition_transforms->laser_in_odometry,
+                                                             motion_compensation, pointcloud);
         }
     }
     else

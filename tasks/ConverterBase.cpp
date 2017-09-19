@@ -97,14 +97,6 @@ void ConverterBase::registerAcquisitionTimeStream()
             boost::bind( &ConverterBase::depth_mapAcquisitionTimeTransformerCallback, this, _1, _2), -1, "depth_map_acquisition_times");
 }
 
-void ConverterBase::computeLocalTransfromations(const ConverterBase::SampleTransforms& transformations, const Eigen::Affine3d& latest, TransformationVector& laserLinesToLatestLine) const
-{
-   // computes the poses of t_latest expressed in t_i;
-   laserLinesToLatestLine.resize(transformations.laser_in_odometry.size());
-   for(unsigned i = 0; i < transformations.laser_in_odometry.size(); i++)
-       laserLinesToLatestLine[i] = transformations.laser_in_odometry[i].inverse() * latest;
-}
-
 
 /// The following lines are template definitions for the various state machine
 // hooks defined by Orocos::RTT. See ConverterBase.hpp for more detailed

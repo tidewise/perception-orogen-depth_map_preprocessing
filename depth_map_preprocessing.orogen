@@ -2,7 +2,7 @@ name "depth_map_preprocessing"
 version "0.1"
 
 import_types_from "base"
-import_types_from "depth_map_preprocessingTypes.hpp"
+import_types_from "depth_map_preprocessing/Config.hpp"
 
 using_library "depth_map_preprocessing"
 
