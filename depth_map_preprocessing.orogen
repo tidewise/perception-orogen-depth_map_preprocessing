@@ -1,10 +1,10 @@
 name "depth_map_preprocessing"
 version "0.1"
 
+using_library "depth_map_preprocessing"
+
 import_types_from "base"
 import_types_from "depth_map_preprocessing/Config.hpp"
-
-using_library "depth_map_preprocessing"
 
 # This filter has the goal to remove separated measurements in the scan
 # and support measurements with neighboring measurements.
