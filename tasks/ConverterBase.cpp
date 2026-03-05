@@ -94,7 +94,9 @@ void ConverterBase::registerAcquisitionTimeStream()
     // register stream
     depth_map_acquisition_times_idx_tr = _transformer.registerDataStream< base::Time >(
             base::Time::fromSeconds(stream_period),
-            boost::bind( &ConverterBase::depth_mapAcquisitionTimeTransformerCallback, this, _1, _2), -1, "depth_map_acquisition_times");
+            [this](auto& ts, auto& sample) {
+                depth_mapAcquisitionTimeTransformerCallback(ts, sample);
+            }, -1, "depth_map_acquisition_times");
 }
 
 
